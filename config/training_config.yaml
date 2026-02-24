@@ -1,0 +1,68 @@
+project:
+  name: causal-embedding
+  seed: 42
+  output_dir: outputs
+
+models:
+  student_model_name: EleutherAI/gpt-neo-2.7B
+  production_student_model_name: EleutherAI/gpt-j-6B
+  local_filter_model_name: mistralai/Mistral-7B-Instruct-v0.2
+  use_8bit: true
+  torch_dtype: float16
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, v_proj]
+
+critic:
+  use_premium_critic: false
+  premium_provider: anthropic
+  premium_top_percent: 0.2
+  default_filtered_score: 2.0
+  max_score: 10.0
+  anthropic_model: claude-3-5-sonnet-latest
+  anthropic_api_key_env: ANTHROPIC_API_KEY
+
+rewards:
+  trace_weight: 0.5
+  probe_weight: 0.5
+
+probe:
+  checkpoint_path: outputs/probe/causal_probe.pt
+  layers: [12, 13, 14, 15, 16, 17, 18, 19, 20]
+  num_classes: 3
+
+training:
+  sft:
+    dataset_path: data/sft/sft_dataset.jsonl
+    output_dir: outputs/sft
+    num_train_epochs: 1
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 8
+    learning_rate: 2.0e-5
+    max_seq_length: 1024
+  dpo:
+    output_dir: outputs/dpo
+    num_train_epochs: 1
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 8
+    learning_rate: 1.0e-5
+    beta: 0.1
+    num_generations_per_prompt: 2
+    checkpoint_every_steps: 50
+
+pipeline:
+  prompts_path: data/prompts/causal_prompts.jsonl
+  run_name: warm_trial
+  max_steps: 100
+  checkpoint_every: 10
+  human_checkpoint_every: 20
+
+logging:
+  log_dir: outputs/logs
+  metrics_file: outputs/logs/metrics.jsonl
+  traces_file: outputs/logs/traces.jsonl
+  use_wandb: false
+  wandb_project: causal-embedding

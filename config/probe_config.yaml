@@ -1,0 +1,14 @@
+probe:
+  input_dim: 256
+  hidden_layers: []
+  num_classes: 3
+  labels: [causal, correlational, unrelated]
+
+training:
+  dataset_path: data/probe_training/probe_dataset.jsonl
+  output_path: outputs/probe/causal_probe.pt
+  epochs: 10
+  batch_size: 32
+  learning_rate: 1.0e-3
+  weight_decay: 0.0
+  val_split: 0.2

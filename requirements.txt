@@ -1,0 +1,15 @@
+torch
+transformers
+peft
+trl
+datasets
+langgraph
+langchain-core
+anthropic
+accelerate
+bitsandbytes
+scikit-learn
+numpy
+pandas
+pyyaml
+wandb
