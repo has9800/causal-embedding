@@ -24,16 +24,16 @@ def run_sft(model, tokenizer, cfg: Dict[str, Any]) -> SFTTrainer:
         per_device_train_batch_size=sft_cfg["per_device_train_batch_size"],
         gradient_accumulation_steps=sft_cfg["gradient_accumulation_steps"],
         learning_rate=sft_cfg["learning_rate"],
-        max_seq_length=sft_cfg["max_seq_length"],
+        max_length=sft_cfg.get("max_seq_length", 1024),
+        dataset_text_field="text",
         logging_steps=10,
         save_steps=100,
     )
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=dataset,
         args=trainer_cfg,
-        dataset_text_field="text",
     )
     trainer.train()
     return trainer

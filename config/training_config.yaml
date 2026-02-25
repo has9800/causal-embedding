@@ -8,7 +8,7 @@ models:
   production_student_model_name: EleutherAI/gpt-j-6B
   local_filter_model_name: mistralai/Mistral-7B-Instruct-v0.2
   trained_model: iteration
-  use_8bit: true
+  use_8bit: false
   torch_dtype: float16
 
 lora:
