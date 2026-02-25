@@ -10,7 +10,13 @@ def _get_blocks(model) -> List:
     """Return transformer blocks for raw HF and PEFT-wrapped causal LMs."""
     inner = getattr(model, "base_model", model)
     inner = getattr(inner, "model", inner)
-    return inner.transformer.h
+    if hasattr(inner, "transformer"):
+        return inner.transformer.h
+    if hasattr(inner, "h"):
+        return inner.h
+    if hasattr(inner, "layers"):
+        return inner.layers
+    raise ValueError(f"Cannot find transformer blocks in {type(inner)}")
 
 
 class HiddenStateExtractor:
