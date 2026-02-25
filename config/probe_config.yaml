@@ -1,4 +1,5 @@
 probe:
+  # input_dim is computed at runtime: model.config.hidden_size * len(probe_layers)
   hidden_layers: []
   num_classes: 3
   labels: [causal, correlational, unrelated]
