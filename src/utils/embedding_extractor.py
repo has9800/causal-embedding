@@ -6,6 +6,13 @@ from typing import Dict, Iterable, List
 import torch
 
 
+def _get_blocks(model) -> List:
+    """Return transformer blocks for raw HF and PEFT-wrapped causal LMs."""
+    inner = getattr(model, "base_model", model)
+    inner = getattr(inner, "model", inner)
+    return inner.transformer.h
+
+
 class HiddenStateExtractor:
     """Capture intermediate hidden states using forward hooks."""
 
@@ -22,7 +29,7 @@ class HiddenStateExtractor:
 
     def run(self, **forward_kwargs) -> Dict[int, torch.Tensor]:
         self.captured = {}
-        blocks: List = self.model.transformer.h
+        blocks = _get_blocks(self.model)
         with ExitStack() as stack:
             for idx in self.layers:
                 stack.enter_context(blocks[idx].register_forward_hook(self._hook_factory(idx)))

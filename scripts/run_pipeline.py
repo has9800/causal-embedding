@@ -7,7 +7,7 @@ import torch
 import yaml
 
 from src.critics.claude_critic import ClaudeCritic
-from src.critics.local_filter import LocalFilterCritic
+from src.critics.local_filter import build_filter_critic
 from src.models.probe import CausalProbe
 from src.models.student import StudentModelFactory
 from src.pipeline.graph import build_graph
@@ -22,13 +22,19 @@ def _load_prompts(path: str):
     return [json.loads(line)["prompt"] for line in lines if line.strip()]
 
 
+def _compute_probe_input_dim(student_model, probe_layers: list[int]) -> int:
+    hidden_size = student_model.config.hidden_size
+    return int(hidden_size) * len(probe_layers)
+
+
 def main() -> None:
     cfg = yaml.safe_load(Path("config/training_config.yaml").read_text())
 
     factory = StudentModelFactory(cfg)
     student = factory.load(production=False)
 
-    probe = CausalProbe(input_dim=256, num_classes=cfg["probe"]["num_classes"])
+    input_dim = _compute_probe_input_dim(student.model, cfg["probe"]["layers"])
+    probe = CausalProbe(input_dim=input_dim, num_classes=cfg["probe"]["num_classes"])
     probe.load_state_dict(torch.load(cfg["probe"]["checkpoint_path"], map_location="cpu"))
     probe.eval()
 
@@ -36,13 +42,14 @@ def main() -> None:
     runtime = {
         "cfg": cfg,
         "student": student,
-        "local_filter": LocalFilterCritic(cfg),
+        "local_filter": build_filter_critic(cfg),
         "premium_critic": ClaudeCritic(cfg),
         "probe": probe,
         "extractor": HiddenStateExtractor(student.model, cfg["probe"]["layers"]),
         "trace_logger": JsonlLogger(cfg["logging"]["traces_file"]),
         "metric_logger": JsonlLogger(cfg["logging"]["metrics_file"]),
         "prompts": prompts,
+        "reference_prompts": prompts[:5],
     }
 
     graph = build_graph()

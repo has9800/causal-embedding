@@ -1,5 +1,4 @@
 probe:
-  input_dim: 256
   hidden_layers: []
   num_classes: 3
   labels: [causal, correlational, unrelated]

@@ -27,6 +27,7 @@ class CausalProbe(nn.Module):
 
     def __init__(self, input_dim: int, num_classes: int = 3) -> None:
         super().__init__()
+        self.input_dim = input_dim
         self.linear = nn.Linear(input_dim, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
