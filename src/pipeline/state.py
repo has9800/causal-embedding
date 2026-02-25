@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import Dict, List, TypedDict
 
 
 @dataclass
@@ -27,13 +27,12 @@ class TraceRecord:
     critic_justification: str = ""
 
 
-@dataclass
-class PipelineState:
-    step: int = 0
-    prompt: str = ""
-    candidate_traces: List[CandidateTrace] = field(default_factory=list)
-    best_trace: str = ""
-    worst_trace: str = ""
-    preference_rows: List[Dict[str, str]] = field(default_factory=list)
-    history: List[TraceRecord] = field(default_factory=list)
-    stop: bool = False
+class PipelineState(TypedDict, total=False):
+    step: int
+    prompt: str
+    candidate_traces: List[CandidateTrace]
+    best_trace: str
+    worst_trace: str
+    preference_rows: List[Dict[str, str]]
+    history: List[TraceRecord]
+    stop: bool
