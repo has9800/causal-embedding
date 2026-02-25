@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import torch
+import torch.nn.functional as F
+
 
 @dataclass
 class GeometryMetrics:
@@ -17,3 +20,12 @@ def summarize_rewards(trace_rewards, probe_rewards, combined_rewards) -> Geometr
         mean_trace_reward=sum(trace_rewards) / max(len(trace_rewards), 1),
         mean_combined_reward=sum(combined_rewards) / n,
     )
+
+
+def compute_kl_divergence(base_logits: torch.Tensor, current_logits: torch.Tensor) -> float:
+    """Compute KL(current || base) over final-token distributions."""
+    base_log_probs = F.log_softmax(base_logits, dim=-1)
+    current_log_probs = F.log_softmax(current_logits, dim=-1)
+    current_probs = current_log_probs.exp()
+    kl = F.kl_div(current_log_probs, base_log_probs, reduction="batchmean", log_target=True)
+    return float(kl.item())

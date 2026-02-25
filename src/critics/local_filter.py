@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -11,8 +12,14 @@ class LocalFilterResult:
     rationale: str
 
 
-class LocalFilterCritic:
-    """Cheap first-pass trace filter. Uses simple heuristics as warm-trial fallback."""
+class BaseFilterCritic(ABC):
+    @abstractmethod
+    def evaluate(self, prompt: str, trace: str) -> LocalFilterResult:
+        raise NotImplementedError
+
+
+class HeuristicFilterCritic(BaseFilterCritic):
+    """PLACEHOLDER — heuristic only, replace before real training."""
 
     def __init__(self, cfg: Dict[str, Any]) -> None:
         self.cfg = cfg
@@ -26,3 +33,20 @@ class LocalFilterCritic:
         passed = confidence >= 0.55
         rationale = "passes heuristic threshold" if passed else "fails heuristic threshold"
         return LocalFilterResult(passed=passed, confidence=confidence, rationale=rationale)
+
+
+class ModelFilterCritic(BaseFilterCritic):
+    """Stub for future model-based local filtering."""
+
+    def __init__(self, cfg: Dict[str, Any]) -> None:
+        self.cfg = cfg
+
+    def evaluate(self, prompt: str, trace: str) -> LocalFilterResult:
+        raise NotImplementedError("ModelFilterCritic is not implemented yet.")
+
+
+def build_filter_critic(cfg: Dict[str, Any]) -> BaseFilterCritic:
+    mode = cfg.get("critic", {}).get("local_filter_type", "heuristic")
+    if mode == "model":
+        return ModelFilterCritic(cfg)
+    return HeuristicFilterCritic(cfg)

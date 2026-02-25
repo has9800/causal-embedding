@@ -4,13 +4,15 @@ This repository implements a modular training workflow for steering transformer 
 
 ## Pipeline Stages
 
-1. **Probe training** (`scripts/train_probe.py`)
+1. **Probe dataset build** (`scripts/build_probe_dataset.py`)
+   - Extracts hidden-state features from the frozen student base model for labeled probe sentences.
+2. **Probe training** (`scripts/train_probe.py`)
    - Trains a frozen linear probe over intermediate hidden-state features.
-2. **SFT warm-start** (`scripts/run_sft.py`)
+3. **SFT warm-start** (`scripts/run_sft.py`)
    - Performs supervised fine-tuning on causal reasoning traces.
-3. **RL-style orchestration** (`scripts/run_pipeline.py`)
-   - Runs LangGraph nodes: generation, local filtering, optional premium critic scoring, probe scoring, reward computation, and checkpointing.
-4. **Model export** (`scripts/save_model.py`)
+4. **RL-style orchestration** (`scripts/run_pipeline.py`)
+   - Runs LangGraph nodes: multi-generation fan-out, filtering/scoring, probe scoring, reward ranking, preference pair construction, and checkpointing.
+5. **Model export** (`scripts/save_model.py`)
    - Saves LoRA adapter and merged model artifacts.
 
 ## Key Design Choices
@@ -27,6 +29,7 @@ This repository implements a modular training workflow for steering transformer 
 ## Run Order
 
 ```bash
+python scripts/build_probe_dataset.py
 python scripts/train_probe.py
 python scripts/run_sft.py
 python scripts/run_pipeline.py
@@ -36,7 +39,7 @@ python scripts/save_model.py
 ## Configuration
 
 - `config/training_config.yaml`: model, LoRA, critic, reward, and pipeline settings.
-- `config/probe_config.yaml`: probe dimensions and probe training hyperparameters.
+- `config/probe_config.yaml`: probe metadata and probe training hyperparameters.
 
 ## Notes
 

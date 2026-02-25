@@ -22,8 +22,9 @@ critic:
   premium_top_percent: 0.2
   default_filtered_score: 2.0
   max_score: 10.0
-  anthropic_model: claude-3-5-sonnet-latest
+  anthropic_model: claude-sonnet-4-5-20250929
   anthropic_api_key_env: ANTHROPIC_API_KEY
+  local_filter_type: heuristic
 
 rewards:
   trace_weight: 0.5
@@ -33,6 +34,7 @@ probe:
   checkpoint_path: outputs/probe/causal_probe.pt
   layers: [12, 13, 14, 15, 16, 17, 18, 19, 20]
   num_classes: 3
+  input_dim_note: "computed at runtime: model.config.hidden_size * len(probe.layers)"
 
 training:
   sft:
