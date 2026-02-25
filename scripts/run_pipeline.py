@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 import torch
@@ -64,6 +65,12 @@ def main() -> None:
     num_rounds = cfg["pipeline"]["num_rounds"]
     batch_size = cfg["pipeline"]["batch_size_per_round"]
     dpo_root = Path(cfg["training"]["dpo"]["output_dir"])
+    human_review_cfg = cfg["pipeline"].get("human_review", {})
+    human_review_enabled = human_review_cfg.get("enabled", False)
+    validation_rounds = int(human_review_cfg.get("validation_rounds", 0))
+    review_percent = float(human_review_cfg.get("review_percent", 0.0))
+    spot_check_percent = float(human_review_cfg.get("spot_check_percent", 0.0))
+    spot_check_interval = int(human_review_cfg.get("spot_check_interval", 0))
 
     for round_index in range(1, num_rounds + 1):
         runtime["round_index"] = round_index
@@ -107,6 +114,70 @@ def main() -> None:
 
         if not preference_rows:
             runtime["metric_logger"].log({"round": round_index, "event": "round_skipped", "reason": "no preference rows"})
+            continue
+
+        if human_review_enabled:
+            in_validation = round_index <= validation_rounds
+            in_spot_check = (
+                not in_validation and spot_check_interval > 0 and round_index % spot_check_interval == 0
+            )
+
+            if in_validation or in_spot_check:
+                review_pct = review_percent if in_validation else spot_check_percent
+                num_to_review = max(1, int(len(preference_rows) * review_pct))
+                num_to_review = min(num_to_review, len(preference_rows))
+
+                review_indices = set(random.sample(range(len(preference_rows)), num_to_review))
+                approved_rows = []
+                reviewed_count = 0
+                skip_remaining_review = False
+
+                for row_index, row in enumerate(preference_rows):
+                    if skip_remaining_review or row_index not in review_indices:
+                        approved_rows.append(row)
+                        continue
+
+                    reviewed_count += 1
+                    print(f"\n{'=' * 60}")
+                    print(f"ROUND {round_index} — REVIEW {reviewed_count}/{num_to_review}")
+                    print(f"{'=' * 60}")
+                    print(f"PROMPT: {row['prompt']}\n")
+                    print(f"CHOSEN TRACE (high reward):\n{row['chosen']}\n")
+                    print(f"REJECTED TRACE (low reward):\n{row['rejected']}\n")
+
+                    response = input("Approve this pair? [a]pprove / [r]eject / [s]kip round: ").strip().lower()
+
+                    if response == "r":
+                        runtime["metric_logger"].log(
+                            {
+                                "round": round_index,
+                                "event": "pair_rejected",
+                                "prompt": row["prompt"],
+                                "reason": "human reviewer rejected",
+                            }
+                        )
+                        continue
+
+                    approved_rows.append(row)
+                    if response == "s":
+                        skip_remaining_review = True
+
+                preference_rows = approved_rows
+
+                runtime["metric_logger"].log(
+                    {
+                        "round": round_index,
+                        "event": "human_review_complete",
+                        "reviewed": reviewed_count,
+                        "approved": len(preference_rows),
+                        "phase": "validation" if in_validation else "spot_check",
+                    }
+                )
+
+        if not preference_rows:
+            runtime["metric_logger"].log(
+                {"round": round_index, "event": "round_skipped", "reason": "no pairs after review"}
+            )
             continue
 
         round_dir = dpo_root / f"round_{round_index}"
