@@ -27,11 +27,19 @@ def _compute_probe_input_dim(student_model, probe_layers: list[int]) -> int:
     return int(hidden_size) * len(probe_layers)
 
 
+def _candidate_for_trace(candidates, trace: str):
+    for candidate in candidates:
+        if candidate.trace == trace:
+            return candidate
+    return None
+
+
 def main() -> None:
     cfg = yaml.safe_load(Path("config/training_config.yaml").read_text())
 
     factory = StudentModelFactory(cfg)
-    student = factory.load(production=False)
+    trained_model = cfg["models"].get("trained_model", "iteration")
+    student = factory.load(production=trained_model == "production")
 
     input_dim = _compute_probe_input_dim(student.model, cfg["probe"]["layers"])
     probe = CausalProbe(input_dim=input_dim, num_classes=cfg["probe"]["num_classes"])
@@ -53,11 +61,97 @@ def main() -> None:
     }
 
     graph = build_graph()
-    state = PipelineState(prompt=prompts[0])
-    final_state = graph.invoke(state, config={"configurable": {"runtime": runtime}})
+    num_rounds = cfg["pipeline"]["num_rounds"]
+    batch_size = cfg["pipeline"]["batch_size_per_round"]
+    dpo_root = Path(cfg["training"]["dpo"]["output_dir"])
 
-    if final_state.preference_rows:
-        run_dpo(student.model, student.tokenizer, final_state.preference_rows, cfg)
+    for round_index in range(1, num_rounds + 1):
+        runtime["round_index"] = round_index
+        preference_rows = []
+        reward_gaps = []
+        chosen_probe_scores = []
+        rejected_probe_scores = []
+        trace_score_gaps = []
+        kl_values = []
+
+        for batch_step in range(batch_size):
+            prompt = prompts[((round_index - 1) * batch_size + batch_step) % len(prompts)]
+            initial_state: PipelineState = {
+                "step": batch_step,
+                "prompt": prompt,
+                "candidate_traces": [],
+                "preference_rows": [],
+                "history": [],
+                "stop": False,
+            }
+            final_state = graph.invoke(initial_state, config={"configurable": {"runtime": runtime}})
+            preference_rows.extend(final_state.get("preference_rows", []))
+
+            candidates = final_state.get("candidate_traces", [])
+            if not candidates:
+                continue
+
+            best_trace = final_state.get("best_trace", "")
+            worst_trace = final_state.get("worst_trace", "")
+            chosen_candidate = _candidate_for_trace(candidates, best_trace)
+            rejected_candidate = _candidate_for_trace(candidates, worst_trace)
+            if chosen_candidate is None or rejected_candidate is None:
+                continue
+
+            chosen_probe_scores.append(chosen_candidate.probe_score)
+            rejected_probe_scores.append(rejected_candidate.probe_score)
+            reward_gaps.append(chosen_candidate.combined_reward - rejected_candidate.combined_reward)
+            trace_score_gaps.append(chosen_candidate.trace_score - rejected_candidate.trace_score)
+            if "mean_kl_divergence" in final_state:
+                kl_values.append(final_state["mean_kl_divergence"])
+
+        if not preference_rows:
+            runtime["metric_logger"].log({"round": round_index, "event": "round_skipped", "reason": "no preference rows"})
+            continue
+
+        round_dir = dpo_root / f"round_{round_index}"
+        run_dpo(student.model, student.tokenizer, preference_rows, cfg, output_dir=str(round_dir))
+
+        mean_chosen_probe = sum(chosen_probe_scores) / max(len(chosen_probe_scores), 1)
+        mean_rejected_probe = sum(rejected_probe_scores) / max(len(rejected_probe_scores), 1)
+        mean_reward_gap = sum(reward_gaps) / max(len(reward_gaps), 1)
+        mean_trace_gap = sum(trace_score_gaps) / max(len(trace_score_gaps), 1)
+        mean_kl = sum(kl_values) / max(len(kl_values), 1)
+
+        runtime["metric_logger"].log(
+            {
+                "round": round_index,
+                "batch_size_per_round": batch_size,
+                "pairs_collected": len(preference_rows),
+                "mean_reward_gap": mean_reward_gap,
+                "mean_probe_chosen": mean_chosen_probe,
+                "mean_probe_rejected": mean_rejected_probe,
+                "probe_score_gap": mean_chosen_probe - mean_rejected_probe,
+                "mean_trace_score_gap": mean_trace_gap,
+                "mean_kl_divergence": mean_kl,
+                "dpo_checkpoint_dir": str(round_dir),
+            }
+        )
+
+        checkpoint_every = cfg["pipeline"]["checkpoint_every_rounds"]
+        if checkpoint_every > 0 and round_index % checkpoint_every == 0:
+            runtime["metric_logger"].log(
+                {
+                    "round": round_index,
+                    "event": "round_checkpoint",
+                    "message": "completed configured round checkpoint interval",
+                }
+            )
+
+        human_every = cfg["pipeline"]["human_checkpoint_every_rounds"]
+        if human_every > 0 and round_index % human_every == 0:
+            runtime["metric_logger"].log(
+                {
+                    "round": round_index,
+                    "event": "human_checkpoint",
+                    "message": "paused for human review",
+                }
+            )
 
 
 if __name__ == "__main__":

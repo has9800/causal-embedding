@@ -28,13 +28,6 @@ def build_graph():
     graph.add_edge("rank_and_pair", "update_model")
     graph.add_edge("update_model", "log_kl_metrics")
     graph.add_edge("log_kl_metrics", "human_checkpoint")
+    graph.add_edge("human_checkpoint", END)
 
-    graph.add_conditional_edges(
-        "human_checkpoint",
-        lambda s: "end" if s.stop else "loop",
-        {
-            "loop": "generate_traces",
-            "end": END,
-        },
-    )
     return graph.compile()
