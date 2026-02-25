@@ -59,7 +59,7 @@ def main() -> None:
         inputs = tokenizer(sentences, return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
         with torch.no_grad():
             hidden_by_layer = extractor.run(**inputs)
-            features = pooled_layer_features(hidden_by_layer).cpu().tolist()
+            features = pooled_layer_features(hidden_by_layer, attention_mask=inputs["attention_mask"]).cpu().tolist()
         for sentence, label, row_features in zip(sentences, labels, features):
             output_rows.append({"sentence": sentence, "features": row_features, "label": label})
 

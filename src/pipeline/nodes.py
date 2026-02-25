@@ -63,7 +63,7 @@ def score_all(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
 
         inputs = bundle.tokenizer(candidate.trace, return_tensors="pt", truncation=True, max_length=1024).to(bundle.model.device)
         hidden_by_layer = extractor.run(**inputs)
-        features = pooled_layer_features(hidden_by_layer)
+        features = pooled_layer_features(hidden_by_layer, attention_mask=inputs.get("attention_mask"))
         with torch.no_grad():
             logits = probe(features.cpu())
         probe_score_norm = probe_confidence_to_reward(logits)

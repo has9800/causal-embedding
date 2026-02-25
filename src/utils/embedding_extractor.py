@@ -38,8 +38,17 @@ class HiddenStateExtractor:
         return self.captured
 
 
-def pooled_layer_features(hidden_by_layer: Dict[int, torch.Tensor]) -> torch.Tensor:
+def pooled_layer_features(
+    hidden_by_layer: Dict[int, torch.Tensor],
+    attention_mask: torch.Tensor | None = None,
+) -> torch.Tensor:
     pooled = []
     for _layer, hidden in sorted(hidden_by_layer.items()):
-        pooled.append(hidden.mean(dim=1))
+        if attention_mask is not None:
+            mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
+            summed = (hidden * mask).sum(dim=1)
+            lengths = mask.sum(dim=1).clamp(min=1)
+            pooled.append(summed / lengths)
+        else:
+            pooled.append(hidden.mean(dim=1))
     return torch.cat(pooled, dim=-1)
