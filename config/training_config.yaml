@@ -63,6 +63,12 @@ pipeline:
   batch_size_per_round: 10
   checkpoint_every_rounds: 2
   human_checkpoint_every_rounds: 5
+  human_review:
+    enabled: true
+    validation_rounds: 10
+    review_percent: 0.2
+    spot_check_percent: 0.05
+    spot_check_interval: 10
 
 logging:
   log_dir: outputs/logs
