@@ -23,6 +23,11 @@ def generate_traces(state: PipelineState, config: Dict[str, Any]) -> PipelineSta
     prompt = state.prompt
     inputs = bundle.tokenizer(prompt, return_tensors="pt").to(bundle.model.device)
     num_generations = runtime["cfg"]["training"]["dpo"]["num_generations_per_prompt"]
+    if num_generations < 2:
+        raise ValueError(
+            "num_generations_per_prompt must be >= 2 for DPO preference pairs, "
+            f"got {num_generations}"
+        )
 
     state.candidate_traces = []
     for _ in range(num_generations):

@@ -24,6 +24,7 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
     model.eval()
+    device = next(model.parameters()).device
 
     layers = training_cfg["probe"]["layers"]
     extractor = HiddenStateExtractor(model, layers)
@@ -31,7 +32,7 @@ def main() -> None:
     sentence_rows = _load_rows("data/probe_training/probe_sentences.jsonl")
     output_rows = []
     for row in sentence_rows:
-        inputs = tokenizer(row["text"], return_tensors="pt", truncation=True, max_length=512).to(model.device)
+        inputs = tokenizer(row["text"], return_tensors="pt", truncation=True, max_length=512).to(device)
         with torch.no_grad():
             hidden_by_layer = extractor.run(**inputs)
             features = pooled_layer_features(hidden_by_layer).squeeze(0).cpu().tolist()

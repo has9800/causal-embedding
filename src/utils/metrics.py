@@ -26,6 +26,5 @@ def compute_kl_divergence(base_logits: torch.Tensor, current_logits: torch.Tenso
     """Compute KL(current || base) over final-token distributions."""
     base_log_probs = F.log_softmax(base_logits, dim=-1)
     current_log_probs = F.log_softmax(current_logits, dim=-1)
-    current_probs = current_log_probs.exp()
-    kl = F.kl_div(current_log_probs, base_log_probs, reduction="batchmean", log_target=True)
+    kl = F.kl_div(base_log_probs, current_log_probs, reduction="batchmean", log_target=True)
     return float(kl.item())
