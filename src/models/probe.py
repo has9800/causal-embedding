@@ -38,6 +38,8 @@ class CausalProbe(nn.Module):
 class ProbeTrainingResult:
     train_loss: float
     val_accuracy: float
+    best_state_dict: Dict[str, torch.Tensor]
+    epoch_metrics: List[Dict[str, float]]
 
 
 def train_probe(
@@ -59,9 +61,15 @@ def train_probe(
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
-    model.train()
     final_loss = 0.0
-    for _ in range(epochs):
+    best_val_acc = float("-inf")
+    best_state_dict = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+    epoch_metrics: List[Dict[str, float]] = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        num_batches = 0
         for x, y in train_loader:
             optimizer.zero_grad()
             logits = model(x)
@@ -69,18 +77,32 @@ def train_probe(
             loss.backward()
             optimizer.step()
             final_loss = float(loss.item())
+            running_loss += final_loss
+            num_batches += 1
 
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for x, y in val_loader:
-            preds = model(x).argmax(dim=-1)
-            correct += int((preds == y).sum().item())
-            total += int(y.numel())
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for x, y in val_loader:
+                preds = model(x).argmax(dim=-1)
+                correct += int((preds == y).sum().item())
+                total += int(y.numel())
 
-    val_acc = correct / max(total, 1)
+        val_acc = correct / max(total, 1)
+        train_loss = running_loss / max(num_batches, 1)
+        epoch_metrics.append({"epoch": float(epoch + 1), "train_loss": train_loss, "val_accuracy": val_acc})
+        if val_acc >= best_val_acc:
+            best_val_acc = val_acc
+            best_state_dict = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+
+    model.load_state_dict(best_state_dict)
     for p in model.parameters():
         p.requires_grad = False
 
-    return ProbeTrainingResult(train_loss=final_loss, val_accuracy=val_acc)
+    return ProbeTrainingResult(
+        train_loss=final_loss,
+        val_accuracy=best_val_acc,
+        best_state_dict=best_state_dict,
+        epoch_metrics=epoch_metrics,
+    )

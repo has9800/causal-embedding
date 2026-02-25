@@ -36,8 +36,10 @@ def main() -> None:
     )
     output_path = Path(probe_cfg["training"]["output_path"])
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), output_path)
-    print({"train_loss": result.train_loss, "val_accuracy": result.val_accuracy, "saved_to": str(output_path), "input_dim": input_dim})
+    torch.save(result.best_state_dict, output_path)
+    for metric in result.epoch_metrics:
+        print({"epoch": int(metric["epoch"]), "train_loss": metric["train_loss"], "val_accuracy": metric["val_accuracy"]})
+    print({"train_loss": result.train_loss, "best_val_accuracy": result.val_accuracy, "saved_to": str(output_path), "input_dim": input_dim})
 
 
 if __name__ == "__main__":
