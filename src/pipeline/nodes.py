@@ -14,6 +14,15 @@ from src.utils.embedding_extractor import pooled_layer_features
 from src.utils.metrics import compute_kl_divergence
 
 
+FEW_SHOT_PREFIX = """Prompt: Why does ice melt when salt is applied?
+Trace: Cause: salt dissolves into the liquid film on ice. Mechanism: dissolved ions lower the freezing point through colligative effects. Effect: ice melts at temperatures below 0C.
+
+Prompt: Why does exercise reduce blood pressure?
+Trace: Cause: regular aerobic exercise is performed. Mechanism: repeated cardiac demand improves arterial elasticity and reduces peripheral resistance. Effect: resting blood pressure decreases over weeks.
+
+"""
+
+
 def _runtime(config: RunnableConfig) -> Dict[str, Any]:
     return config["configurable"]["runtime"]
 
@@ -22,7 +31,11 @@ def generate_traces(state: PipelineState, config: RunnableConfig) -> Dict[str, A
     runtime = _runtime(config)
     bundle = runtime["student"]
     prompt = state["prompt"]
-    inputs = bundle.tokenizer(prompt, return_tensors="pt").to(bundle.model.device)
+
+    full_prompt = FEW_SHOT_PREFIX + f"Prompt: {prompt}\nTrace:"
+    inputs = bundle.tokenizer(full_prompt, return_tensors="pt").to(bundle.model.device)
+    prefix_len = inputs["input_ids"].shape[1]
+
     num_generations = runtime["cfg"]["training"]["dpo"]["num_generations_per_prompt"]
     if num_generations < 2:
         raise ValueError(
@@ -39,7 +52,12 @@ def generate_traces(state: PipelineState, config: RunnableConfig) -> Dict[str, A
             temperature=0.8,
             pad_token_id=bundle.tokenizer.eos_token_id,
         )
-        completion = bundle.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        generated_ids = outputs[0][prefix_len:]
+        completion = bundle.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+
+        if "Prompt:" in completion:
+            completion = completion[:completion.index("Prompt:")].strip()
+
         candidates.append(CandidateTrace(trace=completion))
     return {"candidate_traces": candidates}
 

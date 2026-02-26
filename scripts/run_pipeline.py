@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import random
 from pathlib import Path
 
 import torch
 import yaml
-from peft import LoraConfig, PeftModel, get_peft_model
 
 from src.critics.claude_critic import ClaudeCritic
 from src.critics.local_filter import build_filter_critic
@@ -43,35 +41,6 @@ def main() -> None:
     factory = StudentModelFactory(cfg)
     trained_model = cfg["models"].get("trained_model", "iteration")
     student = factory.load(production=trained_model == "production")
-
-    sft_output_dir = cfg["training"]["sft"]["output_dir"]
-    if os.path.exists(sft_output_dir):
-        checkpoints = sorted(
-            [d for d in os.listdir(sft_output_dir) if d.startswith("checkpoint-")],
-            key=lambda x: int(x.split("-")[1]),
-        )
-        sft_checkpoint = os.path.join(sft_output_dir, checkpoints[-1]) if checkpoints else sft_output_dir
-
-        if os.path.exists(os.path.join(sft_checkpoint, "adapter_config.json")):
-            print(f"Loading SFT adapter from {sft_checkpoint}")
-            sft_model = PeftModel.from_pretrained(student.model, sft_checkpoint)
-            student.model = sft_model.merge_and_unload()
-
-            lora_cfg = cfg["lora"]
-            peft_cfg = LoraConfig(
-                r=lora_cfg["r"],
-                lora_alpha=lora_cfg["alpha"],
-                target_modules=lora_cfg["target_modules"],
-                lora_dropout=lora_cfg["dropout"],
-                task_type="CAUSAL_LM",
-            )
-            student.model = get_peft_model(student.model, peft_cfg)
-            student.model.print_trainable_parameters()
-            print("SFT adapter merged successfully")
-        else:
-            print(f"WARNING: No adapter_config.json found in {sft_checkpoint}, running with base model")
-    else:
-        print(f"WARNING: SFT output dir {sft_output_dir} not found, running with base model")
 
     input_dim = _compute_probe_input_dim(student.model, cfg["probe"]["layers"])
     probe = CausalProbe(input_dim=input_dim, num_classes=cfg["probe"]["num_classes"])
