@@ -35,6 +35,7 @@ probe:
   checkpoint_path: outputs/probe/causal_probe.pt
   layers: [12, 13, 14, 15, 16, 17, 18, 19, 20]
   num_classes: 3
+  dataset_path: data/probe_training/probe_sentences.jsonl
   input_dim_note: "computed at runtime: model.config.hidden_size * len(probe.layers)"
 
 training:

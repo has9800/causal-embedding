@@ -14,7 +14,7 @@ from src.models.student import StudentModelFactory
 from src.pipeline.graph import build_graph
 from src.pipeline.state import PipelineState
 from src.training.dpo_trainer import run_dpo
-from src.utils.embedding_extractor import HiddenStateExtractor
+from src.utils.embedding_extractor import HiddenStateExtractor, pooled_layer_features
 from src.utils.logging import JsonlLogger
 
 
@@ -33,6 +33,76 @@ def _candidate_for_trace(candidates, trace: str):
         if candidate.trace == trace:
             return candidate
     return None
+
+
+def retrain_probe(student, cfg):
+    """Re-extract embeddings from current model and retrain the causal probe."""
+    probe_cfg = cfg["probe"]
+    layers = probe_cfg["layers"]
+    extractor = HiddenStateExtractor(student.model, layers)
+    tokenizer = student.tokenizer
+    device = student.model.device
+
+    label_map = {"causal": 0, "correlational": 1, "unrelated": 2}
+    probe_data_path = probe_cfg.get("dataset_path", "data/probe_training/probe_sentences.jsonl")
+    sentences = []
+    labels = []
+    with open(probe_data_path) as f:
+        for line in f:
+            row = json.loads(line)
+            sentences.append(row["sentence"])
+            labels.append(label_map[row["label"]])
+
+    all_features = []
+    student.model.eval()
+    for sent in sentences:
+        inputs = tokenizer(sent, return_tensors="pt", truncation=True, max_length=256).to(device)
+        hidden_by_layer = extractor.run(**inputs)
+        features = pooled_layer_features(hidden_by_layer, attention_mask=inputs.get("attention_mask"))
+        all_features.append(features.cpu().float())
+
+    X = torch.cat(all_features, dim=0)
+    y = torch.tensor(labels, dtype=torch.long)
+
+    n = len(y)
+    perm = torch.randperm(n)
+    split = int(0.8 * n)
+    X_train, X_val = X[perm[:split]], X[perm[split:]]
+    y_train, y_val = y[perm[:split]], y[perm[split:]]
+
+    input_dim = X.shape[1]
+    num_classes = probe_cfg.get("num_classes", 3)
+    probe = CausalProbe(input_dim=input_dim, num_classes=num_classes)
+    optimizer = torch.optim.Adam(probe.parameters(), lr=1e-3)
+    loss_fn = torch.nn.CrossEntropyLoss()
+
+    best_val_acc = 0.0
+    best_state = None
+    for _epoch in range(10):
+        probe.train()
+        optimizer.zero_grad()
+        logits = probe(X_train)
+        loss = loss_fn(logits, y_train)
+        loss.backward()
+        optimizer.step()
+
+        probe.eval()
+        with torch.no_grad():
+            val_logits = probe(X_val)
+            val_preds = val_logits.argmax(dim=-1)
+            val_acc = (val_preds == y_val).float().mean().item()
+
+        if val_acc >= best_val_acc:
+            best_val_acc = val_acc
+            best_state = {k: v.clone() for k, v in probe.state_dict().items()}
+
+    if best_state is not None:
+        probe.load_state_dict(best_state)
+
+    torch.save(probe.state_dict(), probe_cfg["checkpoint_path"])
+    probe.eval()
+    print(f"Probe retrained: val_accuracy={best_val_acc:.4f}")
+    return probe, best_val_acc
 
 
 def main() -> None:
@@ -183,6 +253,11 @@ def main() -> None:
         round_dir = dpo_root / f"round_{round_index}"
         run_dpo(student.model, student.tokenizer, preference_rows, cfg, output_dir=str(round_dir))
 
+        probe, best_val_acc = retrain_probe(student, cfg)
+        runtime["probe"] = probe
+        runtime["extractor"] = HiddenStateExtractor(student.model, cfg["probe"]["layers"])
+        print(f"Round {round_index}: probe and extractor updated for new model weights")
+
         mean_chosen_probe = sum(chosen_probe_scores) / max(len(chosen_probe_scores), 1)
         mean_rejected_probe = sum(rejected_probe_scores) / max(len(rejected_probe_scores), 1)
         mean_reward_gap = sum(reward_gaps) / max(len(reward_gaps), 1)
@@ -201,6 +276,7 @@ def main() -> None:
                 "mean_trace_score_gap": mean_trace_gap,
                 "mean_kl_divergence": mean_kl,
                 "dpo_checkpoint_dir": str(round_dir),
+                "probe_val_accuracy_after_dpo": best_val_acc,
             }
         )
 
