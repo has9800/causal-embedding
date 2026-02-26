@@ -55,8 +55,10 @@ def generate_traces(state: PipelineState, config: RunnableConfig) -> Dict[str, A
         generated_ids = outputs[0][prefix_len:]
         completion = bundle.tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
-        if "Prompt:" in completion:
-            completion = completion[:completion.index("Prompt:")].strip()
+        # Truncate at any sign the model is continuing past the trace
+        for stop in ["Prompt:", "\n\n", "\nA:", "\nQ:", "\nQuestion:", "\nAnswer:"]:
+            if stop in completion:
+                completion = completion[:completion.index(stop)].strip()
 
         candidates.append(CandidateTrace(trace=completion))
     return {"candidate_traces": candidates}

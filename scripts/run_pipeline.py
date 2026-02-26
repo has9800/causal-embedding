@@ -134,6 +134,7 @@ def main() -> None:
     graph = build_graph()
     num_rounds = cfg["pipeline"]["num_rounds"]
     batch_size = cfg["pipeline"]["batch_size_per_round"]
+    dpo_update_every = cfg["pipeline"].get("dpo_update_every", 5)
     dpo_root = Path(cfg["training"]["dpo"]["output_dir"])
     human_review_cfg = cfg["pipeline"].get("human_review", {})
     human_review_enabled = human_review_cfg.get("enabled", False)
@@ -141,6 +142,7 @@ def main() -> None:
     review_percent = float(human_review_cfg.get("review_percent", 0.0))
     spot_check_percent = float(human_review_cfg.get("spot_check_percent", 0.0))
     spot_check_interval = int(human_review_cfg.get("spot_check_interval", 0))
+    accumulated_preference_rows = []
 
     for round_index in range(1, num_rounds + 1):
         runtime["round_index"] = round_index
@@ -250,19 +252,33 @@ def main() -> None:
             )
             continue
 
-        round_dir = dpo_root / f"round_{round_index}"
-        if hasattr(runtime["local_filter"], "offload"):
-            runtime["local_filter"].offload()
+        accumulated_preference_rows.extend(preference_rows)
 
-        run_dpo(student.model, student.tokenizer, preference_rows, cfg, output_dir=str(round_dir))
+        if round_index % dpo_update_every == 0 or round_index == num_rounds:
+            print(f"Round {round_index}: Running DPO on {len(accumulated_preference_rows)} accumulated pairs")
+            round_dir = dpo_root / f"round_{round_index}"
+            if hasattr(runtime["local_filter"], "offload"):
+                runtime["local_filter"].offload()
 
-        if hasattr(runtime["local_filter"], "reload"):
-            runtime["local_filter"].reload()
+            run_dpo(student.model, student.tokenizer, accumulated_preference_rows, cfg, output_dir=str(round_dir))
 
-        probe, best_val_acc = retrain_probe(student, cfg)
-        runtime["probe"] = probe
-        runtime["extractor"] = HiddenStateExtractor(student.model, cfg["probe"]["layers"])
-        print(f"Round {round_index}: probe and extractor updated for new model weights")
+            if hasattr(runtime["local_filter"], "reload"):
+                runtime["local_filter"].reload()
+
+            probe, best_val_acc = retrain_probe(student, cfg)
+            runtime["probe"] = probe
+            runtime["extractor"] = HiddenStateExtractor(student.model, cfg["probe"]["layers"])
+            print(f"Round {round_index}: probe and extractor updated for new model weights")
+
+            accumulated_preference_rows = []
+        else:
+            best_val_acc = None
+            round_dir = "no_update"
+            rounds_until_update = dpo_update_every - (round_index % dpo_update_every)
+            print(
+                f"Round {round_index}: Accumulated {len(accumulated_preference_rows)} pairs, "
+                f"DPO update in {rounds_until_update} rounds"
+            )
 
         mean_chosen_probe = sum(chosen_probe_scores) / max(len(chosen_probe_scores), 1)
         mean_rejected_probe = sum(rejected_probe_scores) / max(len(rejected_probe_scores), 1)
@@ -282,7 +298,8 @@ def main() -> None:
                 "mean_trace_score_gap": mean_trace_gap,
                 "mean_kl_divergence": mean_kl,
                 "dpo_checkpoint_dir": str(round_dir),
-                "probe_val_accuracy_after_dpo": best_val_acc,
+                "probe_val_accuracy_after_dpo": best_val_acc if best_val_acc is not None else "no_update",
+                "accumulated_pairs": len(accumulated_preference_rows),
             }
         )
 
