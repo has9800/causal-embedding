@@ -251,7 +251,13 @@ def main() -> None:
             continue
 
         round_dir = dpo_root / f"round_{round_index}"
+        if hasattr(runtime["local_filter"], "offload"):
+            runtime["local_filter"].offload()
+
         run_dpo(student.model, student.tokenizer, preference_rows, cfg, output_dir=str(round_dir))
+
+        if hasattr(runtime["local_filter"], "reload"):
+            runtime["local_filter"].reload()
 
         probe, best_val_acc = retrain_probe(student, cfg)
         runtime["probe"] = probe

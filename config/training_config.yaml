@@ -25,11 +25,11 @@ critic:
   max_score: 10.0
   anthropic_model: claude-sonnet-4-5-20250929
   anthropic_api_key_env: ANTHROPIC_API_KEY
-  local_filter_type: heuristic
+  local_filter_type: model
 
 rewards:
-  trace_weight: 0.5
-  probe_weight: 0.5
+  trace_weight: 0.9
+  probe_weight: 0.1
 
 probe:
   checkpoint_path: outputs/probe/causal_probe.pt
