@@ -4,6 +4,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List
 
 import torch
+from langgraph.types import RunnableConfig
 
 from src.pipeline.state import CandidateTrace, PipelineState, TraceRecord
 from src.rewards.combined_reward import combine_rewards
@@ -13,11 +14,11 @@ from src.utils.embedding_extractor import pooled_layer_features
 from src.utils.metrics import compute_kl_divergence
 
 
-def _runtime(config: Dict[str, Any]) -> Dict[str, Any]:
+def _runtime(config: RunnableConfig) -> Dict[str, Any]:
     return config["configurable"]["runtime"]
 
 
-def generate_traces(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
+def generate_traces(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
     runtime = _runtime(config)
     bundle = runtime["student"]
     prompt = state["prompt"]
@@ -31,13 +32,19 @@ def generate_traces(state: PipelineState, config: Dict[str, Any]) -> Dict[str, A
 
     candidates: List[CandidateTrace] = []
     for _ in range(num_generations):
-        outputs = bundle.model.generate(**inputs, max_new_tokens=180, do_sample=True, temperature=0.8)
+        outputs = bundle.model.generate(
+            **inputs,
+            max_new_tokens=180,
+            do_sample=True,
+            temperature=0.8,
+            pad_token_id=bundle.tokenizer.eos_token_id,
+        )
         completion = bundle.tokenizer.decode(outputs[0], skip_special_tokens=True)
         candidates.append(CandidateTrace(trace=completion))
     return {"candidate_traces": candidates}
 
 
-def score_all(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
+def score_all(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
     runtime = _runtime(config)
     bundle = runtime["student"]
     extractor = runtime["extractor"]
@@ -65,7 +72,7 @@ def score_all(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
         hidden_by_layer = extractor.run(**inputs)
         features = pooled_layer_features(hidden_by_layer, attention_mask=inputs.get("attention_mask"))
         with torch.no_grad():
-            logits = probe(features.cpu())
+            logits = probe(features.cpu().float())
         probe_score_norm = probe_confidence_to_reward(logits)
 
         candidate.trace_score = trace_score_norm
@@ -79,7 +86,7 @@ def score_all(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
     return {"candidate_traces": candidates}
 
 
-def rank_and_pair(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
+def rank_and_pair(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
     runtime = _runtime(config)
     ranked = sorted(state["candidate_traces"], key=lambda x: x.combined_reward)
     worst = ranked[0]
@@ -116,7 +123,7 @@ def rank_and_pair(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any
     }
 
 
-def update_model(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
+def update_model(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
     runtime = _runtime(config)
     best = max(state["candidate_traces"], key=lambda x: x.combined_reward)
     worst = min(state["candidate_traces"], key=lambda x: x.combined_reward)
@@ -132,7 +139,7 @@ def update_model(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]
     return {}
 
 
-def log_kl_metrics(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
+def log_kl_metrics(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
     runtime = _runtime(config)
     bundle = runtime["student"]
     reference_prompts: List[str] = runtime["reference_prompts"]
@@ -151,5 +158,5 @@ def log_kl_metrics(state: PipelineState, config: Dict[str, Any]) -> Dict[str, An
     return {"mean_kl_divergence": sum(kls) / max(len(kls), 1)}
 
 
-def human_checkpoint(state: PipelineState, config: Dict[str, Any]) -> Dict[str, Any]:
+def human_checkpoint(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
     return {}

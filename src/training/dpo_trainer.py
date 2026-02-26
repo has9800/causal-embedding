@@ -30,7 +30,7 @@ def run_dpo(
         per_device_train_batch_size=dpo_cfg["per_device_train_batch_size"],
         gradient_accumulation_steps=dpo_cfg["gradient_accumulation_steps"],
         learning_rate=dpo_cfg["learning_rate"],
-        beta=dpo_cfg["beta"],
+        beta=dpo_cfg.get("beta", 0.1),
         logging_steps=10,
         save_steps=dpo_cfg["checkpoint_every_steps"],
     )
