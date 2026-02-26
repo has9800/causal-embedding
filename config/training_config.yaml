@@ -54,6 +54,7 @@ pipeline:
   run_name: warm_trial
   num_rounds: 10
   batch_size_per_round: 10
+  dpo_update_every: 5
   checkpoint_every_rounds: 2
   human_checkpoint_every_rounds: 5
   human_review:
