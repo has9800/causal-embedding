@@ -78,11 +78,11 @@ def score_all(state: PipelineState, config: RunnableConfig) -> Dict[str, Any]:
         if should_use_premium:
             score, justification = runtime["premium_critic"].score_trace(state["prompt"], candidate.trace)
         elif result.passed:
-            score = 6.0
-            justification = "local-only warm trial score for passed trace"
+            score = result.confidence * 10.0
+            justification = result.rationale
         else:
-            score = runtime["cfg"]["critic"]["default_filtered_score"]
-            justification = "filtered out by local gate"
+            score = result.confidence * 10.0
+            justification = result.rationale
 
         trace_score_norm = normalize_trace_score(score)
 
